@@ -30,8 +30,7 @@ public class Habit {
     private Student student;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "horario_estudo", columnDefinition = "horarios")
+    @Column(name = "horario_estudo")
     private StudySchedule studySchedule;
 
     @OneToMany(mappedBy = "habit", cascade = CascadeType.ALL, orphanRemoval = true)
