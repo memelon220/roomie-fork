@@ -1,8 +1,10 @@
 package br.edu.ufape.roomie.controller;
 
+import br.edu.ufape.roomie.model.Student;
 import br.edu.ufape.roomie.model.User;
 import br.edu.ufape.roomie.service.InterestService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,13 +24,18 @@ public class InterestController {
             @PathVariable("id") Long propertyId,
             @AuthenticationPrincipal User loggedInUser) {
 
+        if (!(loggedInUser instanceof Student student)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body("Acesso negado: Apenas estudantes podem demonstrar interesse em imóveis.");
+        }
+
         try {
-            interestService.registerInterest(propertyId, loggedInUser);
+            interestService.registerInterest(propertyId, student);
             return ResponseEntity.ok("Interesse registrado com sucesso. O administrador foi notificado.");
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(409).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage()); // 409
         } catch (RuntimeException e) {
-            return ResponseEntity.status(404).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage()); // 404
         }
     }
 }

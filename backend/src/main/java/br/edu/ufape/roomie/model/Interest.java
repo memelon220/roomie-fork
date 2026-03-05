@@ -3,12 +3,11 @@ package br.edu.ufape.roomie.model;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "interesse", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"id_usuario", "id_imovel"})
+        @UniqueConstraint(columnNames = {"id_estudante", "id_imovel"})
 })
 @Data
 @NoArgsConstructor
@@ -20,8 +19,8 @@ public class Interest {
     private Long id;
 
     @ManyToOne
-    @JoinColumn(name = "id_usuario", nullable = false)
-    private User student;
+    @JoinColumn(name = "id_estudante", nullable = false)
+    private Student student;
 
     @ManyToOne
     @JoinColumn(name = "id_imovel", nullable = false)
@@ -30,10 +29,9 @@ public class Interest {
     @Column(name = "data_interesse", nullable = false)
     private LocalDateTime interestDate;
 
-    public Interest(User student, Property property) {
+    public Interest(Student student, Property property) {
         this.student = student;
         this.property = property;
         this.interestDate = LocalDateTime.now();
     }
-
 }

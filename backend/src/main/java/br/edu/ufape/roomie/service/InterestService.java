@@ -2,7 +2,7 @@ package br.edu.ufape.roomie.service;
 
 import br.edu.ufape.roomie.model.Interest;
 import br.edu.ufape.roomie.model.Property;
-import br.edu.ufape.roomie.model.User;
+import br.edu.ufape.roomie.model.Student;
 import br.edu.ufape.roomie.repository.InterestRepository;
 import br.edu.ufape.roomie.repository.PropertyRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,17 +18,17 @@ public class InterestService {
     private final NotificationService notificationService;
 
     @Transactional
-    public void registerInterest(Long propertyId, User loggedInUser) {
+    public void registerInterest(Long propertyId, Student student) {
         Property property = propertyRepository.findById(propertyId)
                 .orElseThrow(() -> new RuntimeException("Imóvel não encontrado."));
 
-        if (interestRepository.existsByStudentAndProperty(loggedInUser, property)) {
+        if (interestRepository.existsByStudentAndProperty(student, property)) {
             throw new IllegalStateException("Você já demonstrou interesse neste imóvel.");
         }
 
-        Interest interest = new Interest(loggedInUser, property);
+        Interest interest = new Interest(student, property);
         interestRepository.save(interest);
 
-        notificationService.notifyOwnerAboutInterest(property.getOwner(), loggedInUser, property);
+        notificationService.notifyOwnerAboutInterest(property.getOwner(), student, property);
     }
 }

@@ -2,10 +2,12 @@ package br.edu.ufape.roomie.service;
 
 import br.edu.ufape.roomie.model.Interest;
 import br.edu.ufape.roomie.model.Property;
+import br.edu.ufape.roomie.model.Student;
 import br.edu.ufape.roomie.model.User;
 import br.edu.ufape.roomie.repository.InterestRepository;
 import br.edu.ufape.roomie.repository.PropertyRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -14,8 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -34,15 +35,16 @@ class InterestServiceTest {
     @InjectMocks
     private InterestService interestService;
 
-    private User student;
+    private Student student;
     private User owner;
     private Property property;
 
     @BeforeEach
     void setUp() {
-        student = new User();
+        student = new Student();
         student.setId(1L);
         student.setName("Estudante Teste");
+        student.setMajor("Ciência da Computação");
 
         owner = new User();
         owner.setId(2L);
@@ -55,7 +57,8 @@ class InterestServiceTest {
     }
 
     @Test
-    void shouldRegisterInterestSuccessfully() {
+    @DisplayName("Deve registrar o interesse com sucesso e notificar o dono")
+    void testaRegistrarInteresseComSucesso() {
         when(propertyRepository.findById(100L)).thenReturn(Optional.of(property));
         when(interestRepository.existsByStudentAndProperty(student, property)).thenReturn(false);
 
@@ -66,29 +69,29 @@ class InterestServiceTest {
     }
 
     @Test
-    void shouldThrowExceptionWhenAlreadyInterested() {
+    @DisplayName("Deve lançar exceção quando o estudante já demonstrou interesse no imóvel")
+    void testaLancarExcecaoQuandoInteresseDuplicado() {
         when(propertyRepository.findById(100L)).thenReturn(Optional.of(property));
         when(interestRepository.existsByStudentAndProperty(student, property)).thenReturn(true);
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
-            interestService.registerInterest(100L, student);
-        });
+        assertThatThrownBy(() -> interestService.registerInterest(100L, student))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Você já demonstrou interesse neste imóvel.");
 
-        assertEquals("Você já demonstrou interesse neste imóvel.", exception.getMessage());
         verify(interestRepository, never()).save(any(Interest.class));
         verify(notificationService, never()).notifyOwnerAboutInterest(any(), any(), any());
     }
 
     @Test
-    void shouldThrowExceptionWhenPropertyNotFound() {
+    @DisplayName("Deve lançar exceção quando o imóvel não for encontrado")
+    void testaLancarExcecaoQuandoImovelNaoEncontrado() {
         when(propertyRepository.findById(999L)).thenReturn(Optional.empty());
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            interestService.registerInterest(999L, student);
-        });
+        assertThatThrownBy(() -> interestService.registerInterest(999L, student))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Imóvel não encontrado.");
 
-        assertEquals("Imóvel não encontrado.", exception.getMessage());
         verify(interestRepository, never()).save(any(Interest.class));
+        verify(notificationService, never()).notifyOwnerAboutInterest(any(), any(), any());
     }
-
 }
