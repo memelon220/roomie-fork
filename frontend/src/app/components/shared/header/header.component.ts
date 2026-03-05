@@ -133,6 +133,11 @@ export class HeaderComponent {
     this.router.navigate(['/favoritos']);
   }
 
+  goToRecommendations(): void {
+    this.isMenuOpen = false;
+    this.router.navigate(['/recommendations']);
+  }
+
   goToStudentProfile(): void {
     this.isMenuOpen = false;
     this.router.navigate(['/student-profile']);

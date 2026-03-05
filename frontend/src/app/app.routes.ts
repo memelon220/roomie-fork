@@ -9,6 +9,7 @@ import {StudentProfileComponent} from './components/student-profile/student-prof
 import {MeusImoveis} from './pages/meus-imoveis/meus-imoveis';
 import {FavoritosComponent} from './pages/favoritos/favoritos.component';
 import {PropertyDetailPageComponent} from './pages/property-detail/property-detail-page.component';
+import {RecommendationsComponent} from './pages/recommendations/recommendations.component';
 
 export const routes: Routes = [
   {
@@ -72,6 +73,12 @@ export const routes: Routes = [
     component: FavoritosComponent,
     canActivate: [authGuard],
     title: 'Favoritos - Roomie'
+  },
+  {
+    path: 'recommendations',
+    component: RecommendationsComponent,
+    canActivate: [authGuard],
+    title: 'Recomendações - Roomie'
   },
   {
     path: 'details/:id',
