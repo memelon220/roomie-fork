@@ -3,9 +3,12 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { PropertyService } from '../../services/propertyService';
 import { UserService } from '../../services/user.service';
+import { InterestService } from '../../services/interest.service';
 import { Auth } from '../../auth/auth';
 import { PropertyDetailView } from '../../models/property-detail-view';
 import { OwnerReportView } from '../../models/owner-report-view';
+import { InterestSummary } from '../../models/interest-summary';
+import { InterestStatus } from '../../models/interest-status.enum';
 import { HeaderComponent } from '../../components/shared/header/header.component';
 import { take } from 'rxjs';
 import { ToastService } from '../../services/toast.service';
@@ -19,14 +22,23 @@ import { ToastService } from '../../services/toast.service';
 })
 export class MeusImoveis implements OnInit {
 
+  readonly InterestStatus = InterestStatus;
+
   properties: PropertyDetailView[] = [];
   ownerReport: OwnerReportView | null = null;
   isLoading = true;
   deleteConfirmId: number | null = null;
 
+  /** ID do imóvel cujos candidatos estão sendo exibidos, ou null se nenhum */
+  expandedInterestsPropertyId: number | null = null;
+  /** Mapa de propertyId → lista de interessados já carregada */
+  interestsMap: Map<number, InterestSummary[]> = new Map();
+  isLoadingInterests = false;
+
   constructor(
     private readonly propertyService: PropertyService,
     private readonly userService: UserService,
+    private readonly interestService: InterestService,
     private readonly auth: Auth,
     private readonly cdr: ChangeDetectorRef,
     private readonly router: Router,
@@ -154,5 +166,97 @@ export class MeusImoveis implements OnInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /**
+   * Alterna a exibição da lista de candidatos de um imóvel.
+   * Na primeira abertura, busca os dados da API.
+   */
+  toggleInterests(propertyId: number): void {
+    if (this.expandedInterestsPropertyId === propertyId) {
+      this.expandedInterestsPropertyId = null;
+      return;
+    }
+
+    this.expandedInterestsPropertyId = propertyId;
+
+    if (this.interestsMap.has(propertyId)) {
+      return; // já carregado
+    }
+
+    this.loadInterests(propertyId);
+  }
+
+  /**
+   * Carrega a lista de estudantes interessados em um imóvel.
+   * @param propertyId ID do imóvel
+   */
+  loadInterests(propertyId: number): void {
+    this.isLoadingInterests = true;
+    this.cdr.detectChanges();
+
+    this.interestService.getInterests(propertyId).subscribe({
+      next: (interests: InterestSummary[]) => {
+        this.interestsMap.set(propertyId, interests);
+        this.isLoadingInterests = false;
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        console.error('Erro ao carregar candidatos', err);
+        this.toast.error(err?.message ?? 'Erro ao carregar candidatos.');
+        this.isLoadingInterests = false;
+        this.expandedInterestsPropertyId = null;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * Atualiza o status de um candidato (aceitar ou recusar).
+   * @param interestId ID do registro de interesse
+   * @param status     Novo status
+   * @param propertyId ID do imóvel (para recarregar a lista após a atualização)
+   */
+  updateCandidateStatus(interestId: number, status: InterestStatus, propertyId: number): void {
+    this.interestService.updateInterestStatus(interestId, status).subscribe({
+      next: (_message: string) => {
+        const label = status === InterestStatus.ACCEPTED ? 'aceito' : 'recusado';
+        this.toast.success(`Candidato ${label} com sucesso!`);
+        // Recarrega a lista atualizada do servidor
+        this.interestsMap.delete(propertyId);
+        this.loadInterests(propertyId);
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        console.error('Erro ao atualizar status do candidato', err);
+        this.toast.error(err?.message ?? 'Não foi possível atualizar o status do candidato.');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Retorna os candidatos de um imóvel já carregados, ou array vazio. */
+  getInterestsFor(propertyId: number): InterestSummary[] {
+    return this.interestsMap.get(propertyId) ?? [];
+  }
+
+  /** Label legível para o status de interesse */
+  interestStatusLabel(status: InterestStatus): string {
+    const map: Record<InterestStatus, string> = {
+      [InterestStatus.PENDING]: 'Pendente',
+      [InterestStatus.ACCEPTED]: 'Aceito',
+      [InterestStatus.REJECTED]: 'Recusado'
+    };
+    return map[status] ?? status;
+  }
+
+  /** Classe CSS para o badge de status de interesse */
+  interestStatusClass(status: InterestStatus): string {
+    const map: Record<InterestStatus, string> = {
+      [InterestStatus.PENDING]: 'interest-pending',
+      [InterestStatus.ACCEPTED]: 'interest-accepted',
+      [InterestStatus.REJECTED]: 'interest-rejected'
+    };
+    return map[status] ?? '';
   }
 }
