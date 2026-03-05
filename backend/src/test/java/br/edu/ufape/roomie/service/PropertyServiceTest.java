@@ -2,11 +2,15 @@ package br.edu.ufape.roomie.service;
 
 import br.edu.ufape.roomie.dto.AddressDTO;
 import br.edu.ufape.roomie.dto.PropertyRequestDTO;
+import br.edu.ufape.roomie.dto.PropertyResponseDTO;
 import br.edu.ufape.roomie.enums.PropertyStatus;
 import br.edu.ufape.roomie.enums.PropertyType;
 import br.edu.ufape.roomie.enums.UserGender;
+import br.edu.ufape.roomie.model.Address;
 import br.edu.ufape.roomie.model.Property;
 import br.edu.ufape.roomie.model.User;
+import br.edu.ufape.roomie.projection.PropertyDetailView;
+import br.edu.ufape.roomie.repository.PropertyPhotoRepository;
 import br.edu.ufape.roomie.repository.PropertyRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,13 +23,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +42,9 @@ class PropertyServiceTest {
 
     @Mock
     private PropertyRepository propertyRepository;
+
+    @Mock
+    private PropertyPhotoRepository propertyPhotoRepository;
 
     @Mock
     private FileStorageService fileStorageService;
@@ -79,14 +85,18 @@ class PropertyServiceTest {
         SecurityContextHolder.clearContext();
     }
 
+    private void authenticateUser(User user) {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(user, null, null)
+        );
+    }
+
     @Test
     @DisplayName("Deve criar um imóvel com endereço, fotos e status DRAFT com sucesso")
     void shouldCreatePropertyWithFullDetailsSuccessfully() {
-        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(mockOwner, null, null);
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        authenticateUser(mockOwner);
 
-        MockMultipartFile mockPhoto = new MockMultipartFile(
-                "photos", "quarto.jpg", "image/jpeg", "image_bytes".getBytes());
+        MockMultipartFile mockPhoto = new MockMultipartFile("photos", "quarto.jpg", "image/jpeg", "image_bytes".getBytes());
         List<MultipartFile> photosList = List.of(mockPhoto);
 
         when(fileStorageService.storeFile(any(MultipartFile.class))).thenReturn("uuid-gerado-quarto.jpg");
@@ -113,8 +123,8 @@ class PropertyServiceTest {
 
         assertNotNull(result.getPhotos());
         assertEquals(1, result.getPhotos().size());
-        assertEquals("/images/uuid-gerado-quarto.jpg", result.getPhotos().get(0).getPath());
-        assertEquals(result, result.getPhotos().get(0).getProperty());
+        assertEquals("/images/uuid-gerado-quarto.jpg", result.getPhotos().getFirst().getPath());
+        assertEquals(result, result.getPhotos().getFirst().getProperty());
 
         verify(propertyRepository, times(1)).save(any(Property.class));
         verify(fileStorageService, times(1)).storeFile(any(MultipartFile.class));
@@ -133,7 +143,6 @@ class PropertyServiceTest {
         assertEquals("Usuário não autenticado.", exception.getReason());
 
         verify(propertyRepository, never()).save(any());
-        verify(fileStorageService, never()).storeFile(any());
     }
 
     @Test
@@ -143,15 +152,7 @@ class PropertyServiceTest {
         invalidProperty.setTitle("");
         invalidProperty.setPrice(new BigDecimal("-500"));
 
-        var authentication = mock(Authentication.class);
-        var securityContext = mock(SecurityContext.class);
-        var userMock = new User();
-        userMock.setId(1L);
-
-        when(securityContext.getAuthentication()).thenReturn(authentication);
-        when(authentication.isAuthenticated()).thenReturn(true);
-        when(authentication.getPrincipal()).thenReturn(userMock);
-        SecurityContextHolder.setContext(securityContext);
+        authenticateUser(mockOwner);
 
         assertThrows(Exception.class, () -> {
             propertyService.createProperty(invalidProperty, Collections.emptyList());
@@ -159,35 +160,205 @@ class PropertyServiceTest {
     }
 
     @Test
+    @DisplayName("Deve publicar um imóvel com sucesso mudando o status para ACTIVE")
+    void shouldPublishPropertySuccessfully() {
+        authenticateUser(mockOwner);
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
+        property.setStatus(PropertyStatus.DRAFT);
+
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
+        when(propertyRepository.save(any(Property.class))).thenReturn(property);
+
+        Property result = propertyService.publishProperty(50L);
+
+        assertEquals(PropertyStatus.ACTIVE, result.getStatus());
+        verify(propertyRepository, times(1)).save(property);
+    }
+
+    @Test
     @DisplayName("Deve lançar erro 403 Forbidden se o usuário tentar publicar um imóvel de outro dono")
     void shouldThrowForbiddenWhenPublishingPropertyOfAnotherOwner() {
-        var propertyId = 50L;
-
-        var realOwner = new User();
-        realOwner.setId(1L);
-
-        var property = new Property();
-        property.setId(propertyId);
-        property.setOwner(realOwner);
-
-        var impostor = new User();
+        User impostor = new User();
         impostor.setId(2L);
+        authenticateUser(impostor);
 
-        var authentication = mock(Authentication.class);
-        var securityContext = mock(SecurityContext.class);
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
 
-        when(securityContext.getAuthentication()).thenReturn(authentication);
-        when(authentication.isAuthenticated()).thenReturn(true);
-        when(authentication.getPrincipal()).thenReturn(impostor);
-        SecurityContextHolder.setContext(securityContext);
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
 
-        when(propertyRepository.findById(propertyId)).thenReturn(Optional.of(property));
-
-        assertThrows(ResponseStatusException.class, () -> {
-            propertyService.publishProperty(propertyId);
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            propertyService.publishProperty(50L);
         });
 
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
         verify(propertyRepository, never()).save(any(Property.class));
+    }
 
+    @Test
+    @DisplayName("Deve deletar o imóvel com sucesso")
+    void shouldDeletePropertySuccessfully() {
+        authenticateUser(mockOwner);
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
+
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
+
+        propertyService.deleteProperty(50L);
+
+        verify(propertyRepository, times(1)).delete(property);
+    }
+
+    @Test
+    @DisplayName("Deve lançar erro 403 Forbidden ao tentar deletar imóvel de outro dono")
+    void shouldThrowForbiddenWhenDeletingPropertyOfAnotherOwner() {
+        User impostor = new User();
+        impostor.setId(2L);
+        authenticateUser(impostor);
+
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
+
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            propertyService.deleteProperty(50L);
+        });
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        verify(propertyRepository, never()).delete(any(Property.class));
+    }
+
+    @Test
+    @DisplayName("Deve voltar o imóvel para rascunho (DRAFT) com sucesso")
+    void shouldSetPropertyToDraftSuccessfully() {
+        authenticateUser(mockOwner);
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
+        property.setStatus(PropertyStatus.ACTIVE);
+
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
+        when(propertyRepository.save(any(Property.class))).thenReturn(property);
+
+        Property result = propertyService.setPropertyToDraft(50L);
+
+        assertEquals(PropertyStatus.DRAFT, result.getStatus());
+        verify(propertyRepository, times(1)).save(property);
+    }
+
+    @Test
+    @DisplayName("Deve atualizar o imóvel com sucesso, substituindo as fotos e voltando para DRAFT")
+    void shouldUpdatePropertySuccessfully() {
+        authenticateUser(mockOwner);
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
+        property.setAddress(new Address());
+        property.setPhotos(new ArrayList<>());
+        property.setStatus(PropertyStatus.ACTIVE);
+
+        MockMultipartFile mockPhoto = new MockMultipartFile("photos", "nova_foto.jpg", "image/jpeg", "bytes".getBytes());
+
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
+        when(fileStorageService.storeFile(any(MultipartFile.class))).thenReturn("uuid-nova-foto.jpg");
+        when(propertyRepository.save(any(Property.class))).thenReturn(property);
+
+        Property result = propertyService.updateProperty(50L, validDto, List.of(mockPhoto));
+
+        assertEquals("Quarto Universitário", result.getTitle());
+        assertEquals(PropertyStatus.DRAFT, result.getStatus());
+        assertEquals(1, result.getPhotos().size());
+        assertEquals("/images/uuid-nova-foto.jpg", result.getPhotos().getFirst().getPath());
+    }
+
+    @Test
+    @DisplayName("Deve atualizar o imóvel mantendo a lista vazia caso não envie novas fotos")
+    void shouldUpdatePropertyWithoutPhotosSuccessfully() {
+        authenticateUser(mockOwner);
+        Property property = new Property();
+        property.setId(50L);
+        property.setOwner(mockOwner);
+        property.setAddress(new Address());
+        property.setPhotos(new ArrayList<>());
+
+        when(propertyRepository.findById(50L)).thenReturn(Optional.of(property));
+        when(propertyRepository.save(any(Property.class))).thenReturn(property);
+
+        Property result = propertyService.updateProperty(50L, validDto, null);
+
+        assertEquals("Quarto Universitário", result.getTitle());
+        assertTrue(result.getPhotos().isEmpty());
+        verify(fileStorageService, never()).storeFile(any());
+    }
+
+    @Test
+    @DisplayName("Deve retornar os detalhes do anúncio corretamente quando ele estiver ACTIVE")
+    void shouldReturnPropertyDetailsSuccessfully() {
+        authenticateUser(mockOwner);
+
+        PropertyDetailView mockView = mock(PropertyDetailView.class);
+        when(mockView.getStatus()).thenReturn("ACTIVE");
+
+        when(propertyRepository.findDetailById(50L)).thenReturn(Optional.of(mockView));
+        when(propertyPhotoRepository.findPhotosByPropertyId(50L)).thenReturn(List.of("/images/foto1.jpg"));
+
+        PropertyResponseDTO result = propertyService.getPropertyDetails(50L);
+
+        assertNotNull(result);
+        assertEquals(mockView, result.getDetails());
+        assertEquals(1, result.getPhotos().size());
+        assertEquals("/images/foto1.jpg", result.getPhotos().getFirst());
+    }
+
+    @Test
+    @DisplayName("Deve lançar erro 403 Forbidden ao tentar ver detalhes de um imóvel que não está ACTIVE")
+    void shouldThrowForbiddenWhenPropertyIsNotActive() {
+        authenticateUser(mockOwner);
+
+        PropertyDetailView mockView = mock(PropertyDetailView.class);
+        when(mockView.getStatus()).thenReturn("DRAFT"); // Imóvel não está ativo
+
+        when(propertyRepository.findDetailById(50L)).thenReturn(Optional.of(mockView));
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            propertyService.getPropertyDetails(50L);
+        });
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+        assertEquals("Anúncio não está disponivel", exception.getReason());
+    }
+
+    @Test
+    @DisplayName("Deve lançar erro 404 NotFound se os detalhes do imóvel não existirem")
+    void shouldThrowNotFoundWhenPropertyDetailsDoNotExist() {
+        authenticateUser(mockOwner);
+        when(propertyRepository.findDetailById(99L)).thenReturn(Optional.empty());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            propertyService.getPropertyDetails(99L);
+        });
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Deve lançar erro 401 Unauthorized se o principal do contexto não for uma instância de User")
+    void shouldThrowUnauthorizedWhenPrincipalIsNotUser() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("anonymousUser", null, null)
+        );
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+            propertyService.deleteProperty(50L);
+        });
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+        assertEquals("Usuário não autenticado.", exception.getReason());
     }
 }

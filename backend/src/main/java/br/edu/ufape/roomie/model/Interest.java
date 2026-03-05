@@ -1,8 +1,11 @@
 package br.edu.ufape.roomie.model;
 
+import br.edu.ufape.roomie.enums.InterestStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,9 +32,15 @@ public class Interest {
     @Column(name = "data_interesse", nullable = false)
     private LocalDateTime interestDate;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "status", nullable = false, columnDefinition = "status_interesse")
+    private InterestStatus status;
+
     public Interest(Student student, Property property) {
         this.student = student;
         this.property = property;
         this.interestDate = LocalDateTime.now();
+        this.status = InterestStatus.PENDING;
     }
 }
